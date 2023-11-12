@@ -3,11 +3,13 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 inlBtnAddTask = KeyboardButton(text='Добавить задание')
 inlBtnDeleteTask = KeyboardButton(text='Удалить задание')
 inlBtnEditTask = KeyboardButton(text='Изменить задание')
-inlBtnShowTasks = KeyboardButton(text='Показать все задания')
-inlBtnShowMyTasks = KeyboardButton(text="Показать мои задания")
+inlBtnShowTasks = KeyboardButton(text='Все задания')
+inlBtnShowMyTasks = KeyboardButton(text="Мои задания")
+inlBtnShowTasksThatIGiven = KeyboardButton(text="Данные мной задания")
 adminMenu = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
-    [inlBtnAddTask, inlBtnEditTask, inlBtnDeleteTask, ],
-    [inlBtnShowTasks, inlBtnShowMyTasks]
+    [inlBtnAddTask],
+    [inlBtnEditTask, inlBtnDeleteTask],
+    [inlBtnShowTasks, inlBtnShowMyTasks, inlBtnShowTasksThatIGiven]
 ])
 
 userMenu = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[[inlBtnShowTasks, inlBtnShowMyTasks]])
