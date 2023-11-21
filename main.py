@@ -24,6 +24,8 @@ admins_tasks = {}
 task_id_counter = 0
 users_waiting_for_confirmation = {}
 
+commands = {"/start", "/help", "/cancel"}
+
 
 def is_deadline_valid(deadline):
     # Паттерн для проверки формата "DD.MM.YYYY HH:MM"
@@ -117,12 +119,36 @@ async def send_reminder():
 async def command_start(message: types.Message):
     user_id = message.from_user.id
     if user_id in admin_ids:
-        await message.answer("Привет, админ! Выберите действие:", reply_markup=mk.adminMenu)
+        await message.answer("Привет, актив👋\nЯ таскабот, который поможет тебе получать, давать и выполнять задания к \
+дедлайну🧑‍💻\n\nТасочки, которые ты должен выполнить, находятся в '<b>Мои задания</b>'\nТасочки для всего актива \
+расположены в '<b>Все задания</b>'\nТасочки, которые назначил ты, доступны в '<b>Я назначил</b>' (<i>только для глав \
+отдела</i>👑)\n\nКстати, ты зарегистрирован как <b>админ</b>😉\n\nУдачи🍀", reply_markup=mk.adminMenu, parse_mode='HTML')
     else:
-        await message.answer("Вы зарегистрировались как обычный пользователь.", reply_markup=mk.userMenu)
+        await message.answer("Привет, актив👋\nЯ таскабот, который поможет тебе получать, давать и выполнять задания к \
+дедлайну🧑‍💻\n\nТасочки, которые ты должен выполнить, находятся в '<b>Мои задания</b>'\nТасочки для всего актива \
+расположены в '<b>Все задания</b>'\n\nКстати, ты успешно зарегистрирован как <b>обычный пользователь</b>😉\n\nУдачи🍀",
+                             reply_markup=mk.userMenu, parse_mode='HTML')
 
     reg_users[user_id] = message.from_user.username
     print(message.from_user.id, message.from_user.username)
+
+
+@dp.message_handler(commands=['help'])
+async def command_help(message: types.Message):
+    await message.answer("Help box✨\n\n\
+/start - запуск бота\n\n\
+/cancel - отменяет\n\
+добавление или редактирование задания\n\n\
+<b>Мои задания</b> - посмотреть только мои задания\n\n\
+<b>Все задания</b> - посмотреть задания всего актива\n\n\
+<i>Только для админа</i>\n\n\
+<b>Добавить задание</b> - назначить задание другому пользователю(пользователям)\n\n\
+<b>Изменить задание</b> - изменить задание, которое ты назначил другому пользователю\n\n\
+<b>Удалить задание</b> - удалить задание, которое ты назначил другому пользователю\n\n\
+<b>Я назначил</b> - посмотреть задания, который ты назначил другим пользователям\n\n\
+/add_admin @username - добавить админа (но ты не можешь это делать хи-хи-хи-ха)\n\n\
+/delete_admin @username - удалить админа (это тоже не можешь хи-хи-хи-ха)\n\n\
+По всем вопросам и предложениям обращаться к @payalnik144", reply_markup=mk.adminMenu, parse_mode='HTML')
 
 
 @dp.message_handler(text='Добавить задание')
@@ -141,7 +167,7 @@ async def add_task(message: types.Message):
         tasks[admins_tasks[user_id]]['task_id'] = admins_tasks[user_id]
         await dp.current_state(user=message.from_user.id).set_state("waiting_for_title")
     else:
-        await message.answer("У вас нет прав для этой операции")
+        await message.answer("Не лееезь, у тебя нет прав для этой операции🤓")
 
 
 @dp.message_handler(state="waiting_for_title")
@@ -173,7 +199,8 @@ async def process_new_task_description(message: types.Message):
         await cancel_add(message)
     if admins_tasks[user_id] in tasks:
         tasks[admins_tasks[user_id]]['description'] = message.text
-        await message.answer("Введите дедлайн задачи (в формате DD.MM.YYYY HH:MM):\nНапример 15.01.2023 14:00")
+        await message.answer("Введите дедлайн задачи (в формате DD.MM.YYYY HH:MM):\n<i>например</i>, 15.01.2023 14:00",
+                             parse_mode='HTML')
         await dp.current_state(user=message.from_user.id).set_state("waiting_for_deadline")
 
 
@@ -186,7 +213,8 @@ async def process_new_task_deadline(message: types.Message):
         deadline = message.text
         if is_deadline_valid(deadline):
             tasks[admins_tasks[user_id]]['deadline'] = deadline
-            await message.answer("Введите закрепленных людей (через запятую):")
+            await message.answer("Введите тэги закрепленных людей (через запятую):\n<i>например</i>, @payalnik143, \
+@payalnik144, @payalnik145", parse_mode='HTML')
             await dp.current_state(user=message.from_user.id).set_state("waiting_for_assigned_to")
         else:
             await message.answer("Дедлайн введен неправильно. \
@@ -242,7 +270,7 @@ async def show_my_tasks(message: types.Message):
         await message.answer("Вам пока не назначены задачи.")
 
 
-@dp.message_handler(text='Данные мной задания')
+@dp.message_handler(text='Я назначил')
 async def show_tasks_given_you(message: types.Message):
     user_id = message.from_user.id
     if user_id in admin_ids:
@@ -269,11 +297,18 @@ async def request_task_id(message: types.Message):
             # Устанавливаем состояние ожидания ввода ID задачи
             await dp.current_state(user=message.from_user.id).set_state("waiting_for_task_id")
     else:
-        await message.answer("У вас нет прав для этой операции")
+        await message.answer("Не лееезь, у тебя нет прав для этой операции🤓")
 
 
-@dp.message_handler(lambda message: message.text.isdigit(), state="waiting_for_task_id")
+@dp.message_handler(state="waiting_for_task_id")
 async def confirm_delete_task(message: types.Message):
+    if message.text in commands:
+        await message.answer("Удаление отменено.", reply_markup=mk.adminMenu)
+        await dp.current_state(user=message.from_user.id).set_state(None)
+        return
+    if not message.text.isdigit():
+        await message.answer("ID задачи должен состоять только из цифр, попробуйте снова.")
+        return
     task_id = int(message.text)
     if task_id in tasks:
         task = tasks[task_id]
@@ -295,11 +330,14 @@ async def confirm_delete_task(message: types.Message):
         await dp.current_state(user=message.from_user.id).set_state(None)
 
 
-@dp.message_handler(lambda message: message.text in ["Да", "Нет"], state="waiting_for_confirmation")
+@dp.message_handler(state="waiting_for_confirmation")
 async def process_delete_confirmation(message: types.Message):
     user_id = message.from_user.id
     task_id = users_waiting_for_confirmation.get(user_id)
-
+    if message.text in commands:
+        await message.answer("Удаление отменено.", reply_markup=mk.adminMenu)
+        await dp.current_state(user=message.from_user.id).set_state(None)
+        return
     if task_id is not None:
         if message.text == "Да":
             del tasks[task_id]
@@ -325,13 +363,13 @@ async def request_task_id(message: types.Message):
             # Устанавливаем состояние ожидания ввода ID задачи
             await dp.current_state(user=message.from_user.id).set_state("waiting_for_task_id_2")
     else:
-        await message.answer("У вас нет прав для этой операции")
+        await message.answer("Не лееезь, у тебя нет прав для этой операции🤓")
 
 
 @dp.message_handler(state="waiting_for_task_id_2")
 async def edit_task(message: types.Message):
     # Получаем введенный пользователем ID задачи и преобразуем его в целое число
-    if message.text == '/cancel' or message.text == '/start':
+    if message.text in commands:
         await message.answer("Редактирование отменено.", reply_markup=mk.adminMenu)
         await dp.current_state(user=message.from_user.id).set_state(None)
         return
@@ -365,7 +403,7 @@ async def edit_task_field(message: types.Message):
         await dp.current_state(user=message.from_user.id).set_state(None)
         return
 
-    if message.text == '/cancel' or message.text == '/start':
+    if message.text in commands:
         await message.answer("Редактирование отменено.", reply_markup=mk.adminMenu)
         if users[user_id]['editing']:
             del users[user_id]['editing']
@@ -378,7 +416,14 @@ async def edit_task_field(message: types.Message):
 
     field_to_edit = message.text
     users[user_id]['field_to_edit'] = field_to_edit
-    await message.answer(f"Введите новое значение для '{field_to_edit}':")
+    if field_to_edit == 'Дедлайн':
+        await message.answer(f"Введите новое значение для '{field_to_edit}' в формате DD.MM.YYYY HH:MM:\n<i>например</i>, \
+15.01.2023 14:00", parse_mode='HTML')
+    elif field_to_edit == 'Закрепленные люди':
+        await message.answer(f"Введите новое значение для '{field_to_edit}' через запятую:\n<i>например</i>, \
+@payalnik143, @payalnik144, @payalnik145", parse_mode='HTML')
+    else:
+        await message.answer(f"Введите новое значение для '{field_to_edit}':")
     users[user_id]['editing_value'] = True
     await dp.current_state(user=message.from_user.id).set_state("waiting_for_editing_value")
 
@@ -398,7 +443,7 @@ async def edit_task_field_value(message: types.Message):
     field_to_edit = users[user_id]['field_to_edit']
     task_id = users[user_id]['task_id']
 
-    if message.text == '/cancel' or message.text == '/start':
+    if message.text in commands:
         await message.answer("Редактирование отменено.", reply_markup=mk.adminMenu)
         if users[user_id]['editing_value']:
             del users[user_id]['editing_value']
@@ -477,7 +522,7 @@ async def handle_mark_done(callback: types.CallbackQuery):
             print(f"ID для пользователя {task_creator}: {creator_id}")
         else:
             # Идентификатор не найден
-            print(f"Пользователь {task_creator} не найден.")
+            print(f"Пользователь {task_creator} не найден, возможно, не зарегистрирован.")
         await bot.edit_message_text(chat_id=callback.from_user.id,
                                     message_id=callback.message.message_id,
                                     text=text_message,
@@ -511,7 +556,7 @@ async def handle_mark_undone(callback: types.CallbackQuery):
             print(f"ID для пользователя {task_creator}: {creator_id}")
         else:
             # Идентификатор не найден
-            print(f"Пользователь {task_creator} не найден.")
+            print(f"Пользователь {task_creator} не найден, возможно, не зарегистрирован.")
         await bot.edit_message_text(chat_id=callback.from_user.id,
                                     message_id=callback.message.message_id,
                                     text=text_message,
@@ -531,12 +576,15 @@ async def handle_add_admin(message: types.Message):
     new_admin_username = message.text.split()[1].replace("@", "")
     user_id = next((user_id for user_id, user_username in reg_users.items() if user_username == new_admin_username),
                    None)
+    if user_id in super_admin_ids:
+        await message.answer(f"Да это же наш брат! Пользователь @{new_admin_username} уже админ")
+        return
     if user_id in reg_users:
         admin_ids.add(user_id)
-        await bot.send_message(user_id, f"Поздравляю, теперь вы админ!🥳", reply_markup=mk.adminMenu)
+        await bot.send_message(user_id, f"Поздравляю, ты стал админом таскабота!🥳", reply_markup=mk.adminMenu)
         await message.answer(f"Пользователь @{new_admin_username} теперь админ!🥳")
     else:
-        await message.answer(f"Пользователь @{new_admin_username} не найден")
+        await message.answer(f"Пользователь @{new_admin_username} не найден, возможно, не зарегистрирован.")
 
 
 @dp.message_handler(lambda message: message.text.startswith("/delete_admin"))
@@ -551,14 +599,22 @@ async def handle_delete_admin(message: types.Message):
     new_admin_username = message.text.split()[1].replace("@", "")
     user_id = next((user_id for user_id, user_username in reg_users.items() if user_username == new_admin_username),
                    None)
+    if user_id in super_admin_ids:
+        await message.answer(f"Он и так не с нами! Пользователь @{new_admin_username} не может быть удалён, так как не \
+является админом")
+        return
     if user_id in reg_users:
         admin_ids.remove(user_id)
-        await bot.send_message(user_id, f"Вы больше не админ😭", reply_markup=mk.userMenu)
+        await bot.send_message(user_id, f"Ты выписан из списка пидорасов (больше не админ)😭", reply_markup=mk.userMenu)
         await message.answer(f"Пользователь @{new_admin_username} больше не админ!😭")
     else:
-        await message.answer(f"Пользователь @{new_admin_username} не найден")
+        await message.answer(f"Пользователь @{new_admin_username} не найден, возможно, не зарегистрирован.")
 
 
+@dp.message_handler()
+async def all_(message: types.Message):
+    if message.text.lower() == "жос":
+        await message.answer("кий Добрыня Никитич")
 async def on_startup(dp):
     asyncio.create_task(send_reminder())
 

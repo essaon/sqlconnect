@@ -5,7 +5,7 @@ inlBtnDeleteTask = KeyboardButton(text='Удалить задание')
 inlBtnEditTask = KeyboardButton(text='Изменить задание')
 inlBtnShowTasks = KeyboardButton(text='Все задания')
 inlBtnShowMyTasks = KeyboardButton(text="Мои задания")
-inlBtnShowTasksThatIGiven = KeyboardButton(text="Данные мной задания")
+inlBtnShowTasksThatIGiven = KeyboardButton(text="Я назначил")
 adminMenu = ReplyKeyboardMarkup(resize_keyboard=True, keyboard=[
     [inlBtnAddTask],
     [inlBtnEditTask, inlBtnDeleteTask],
