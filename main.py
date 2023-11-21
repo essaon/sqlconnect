@@ -13,8 +13,10 @@ dp = Dispatcher(bot, storage=storage)
 # Глобальный словарь для хранения задач
 tasks = {} # sql
 reg_users = {} # sql
-admin_ids = config.admin_ids # sql
-super_admin_ids = config.super_admin_ids # sql
+
+admin_ids = config.admin_ids # sql это просто словарь с id админов
+super_admin_ids = config.super_admin_ids # sql это тоже словарь с id админов, только админов покруче
+# я их просто закинул в конфиг, поэтому на гите нету
 
 users = {}
 admins_tasks = {}
@@ -37,14 +39,16 @@ def format_task_info(task):
     assigned_to_list = task['assigned_to'].split(',')
     assigned_to_text = ', '.join([f'@{username.strip()}' for username in assigned_to_list])
 
-    message_text = (f"**ID: {task['task_id']}**\n"
-                    f"**Название:** {task['title']}\n"
-                    f"**Тип:** {task['type']}\n"
-                    f"**Описание:** {task['description']}\n"
-                    f"**Дедлайн:** {task['deadline']}\n"
-                    f"**Закрепленные люди:** {assigned_to_text}\n"
-                    f"**Кто создал:** @{task['who_created']}\n"
-                    f"**Статус:** {task['status']}\n")
+    message_text = (
+        f"<b>ID:</b> {task['task_id']}\n\n"
+        f"<b>Название:</b> {task['title']}\n\n"
+        f"<b>Тип:</b> {task['type']}\n\n"
+        f"<b>Описание:</b> {task['description']}\n\n"
+        f"<b>Дедлайн:</b> {task['deadline']}\n\n"
+        f"<b>Закрепленные люди:</b> {assigned_to_text}\n\n"
+        f"<b>Кто создал:</b> @{task['who_created']}\n\n"
+        f"<b>Статус:</b> {task['status']}\n\n"
+    )
     return message_text
 
 
@@ -55,7 +59,7 @@ async def send_notification(assigned_to, task_id, text):
                 print(user_username)
                 message_text = text + '\n\n' + format_task_info(tasks[task_id])
                 done_button = mk.make_done_button(task_id)
-                await bot.send_message(user_id, message_text, reply_markup=done_button)
+                await bot.send_message(user_id, message_text, reply_markup=done_button, parse_mode='HTML')
 
 
 @dp.message_handler(text='хуй')
@@ -132,7 +136,8 @@ async def add_task(message: types.Message):
         tasks[admins_tasks[user_id]] = {'task_id': '', 'title': '', 'type': '', 'description': '', 'deadline': '',
                                         'assigned_to': '',
                                         'who_created': (message.from_user.username or 'UnknownUser'),
-                                        'status': 'Несделано❌'}
+                                        'status': 'Не сделано❌',
+                                        }
         tasks[admins_tasks[user_id]]['task_id'] = admins_tasks[user_id]
         await dp.current_state(user=message.from_user.id).set_state("waiting_for_title")
     else:
@@ -199,7 +204,7 @@ async def process_new_task_assigned_to(message: types.Message):
         await message.answer(f"Задача успешно добавлена с ID: {admins_tasks[user_id]}")
         task = tasks[admins_tasks[user_id]]
         message_text = format_task_info(task)
-        await message.answer(message_text, reply_markup=mk.adminMenu)
+        await message.answer(message_text, reply_markup=mk.adminMenu, parse_mode='HTML')
 
         # отправка уведомления прикрепленным людям
         assigned_to = tasks[admins_tasks[user_id]]['assigned_to'].split(',')
@@ -216,7 +221,7 @@ async def watch_task(message: types.Message):
         for task_id in tasks.keys():
             task = tasks[task_id]
             message_text = format_task_info(task)
-            await message.answer(message_text)
+            await message.answer(message_text, parse_mode='HTML')
 
 
 @dp.message_handler(text='Мои задания')
@@ -227,12 +232,12 @@ async def show_my_tasks(message: types.Message):
     if user_assigned_tasks:
         for task in user_assigned_tasks:
             message_text = format_task_info(task)
-            if task['status'] == 'Несделано❌':
+            if task['status'] == 'Не сделано❌':
                 done_button = mk.make_done_button(task['task_id'])
-                await message.answer(message_text, reply_markup=done_button)
+                await message.answer(message_text, reply_markup=done_button, parse_mode='HTML')
             else:
                 undone_button = mk.make_undone_button(task['task_id'])
-                await message.answer(message_text, reply_markup=undone_button)
+                await message.answer(message_text, reply_markup=undone_button, parse_mode='HTML')
     else:
         await message.answer("Вам пока не назначены задачи.")
 
@@ -246,7 +251,7 @@ async def show_tasks_given_you(message: types.Message):
         if admin_tasks:
             for task in admin_tasks:
                 message_text = format_task_info(task)
-                await message.answer(message_text)
+                await message.answer(message_text, parse_mode='HTML')
         else:
             await message.answer("Вы еще не создали ни одной задачи.")
 
@@ -278,7 +283,7 @@ async def confirm_delete_task(message: types.Message):
         else:
             message_text = format_task_info(task)
             markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add("Да", "Нет")
-            await message.answer(f"Вы уверены, что хотите удалить следующую задачу?\n{message_text}", reply_markup=markup)
+            await message.answer(f"Вы уверены, что хотите удалить следующую задачу?\n{message_text}", reply_markup=markup, parse_mode='HTML')
 
             # Устанавливаем "ожидание подтверждения удаления" в пользовательском словаре
             users_waiting_for_confirmation[message.from_user.id] = task_id
@@ -433,7 +438,7 @@ async def edit_task_field_value(message: types.Message):
     message_text = format_task_info(task)
 
     await message.answer(f"Поле '{field_to_edit}' отредактировано. Новое значение: {new_value}")
-    await message.answer(message_text, reply_markup=mk.adminMenu)
+    await message.answer(message_text, reply_markup=mk.adminMenu, parse_mode='HTML')
     await send_notification(task['assigned_to'].split(','), task_id, f"Админ @{message.from_user.username} \
 отредактировал вашу задачу (ID: {task_id})\nДержу в курсе, бро🤙")
 
@@ -467,7 +472,7 @@ async def handle_mark_done(callback: types.CallbackQuery):
             text_message2 = f"Пользователь @{callback.from_user.username} \
 отметил вашу задачу (ID: {task_id}) как выполненную.\n\n"+text_message
 
-            message = await bot.send_message(creator_id, text_message2)
+            message = await bot.send_message(creator_id, text_message2, parse_mode="HTML")
             tasks[task_id]['notification_message_id'] = message.message_id
             print(f"ID для пользователя {task_creator}: {creator_id}")
         else:
@@ -476,7 +481,7 @@ async def handle_mark_done(callback: types.CallbackQuery):
         await bot.edit_message_text(chat_id=callback.from_user.id,
                                     message_id=callback.message.message_id,
                                     text=text_message,
-                                    reply_markup=mk.make_undone_button(task_id))
+                                    reply_markup=mk.make_undone_button(task_id), parse_mode="HTML")
 
     await callback.answer()
 
@@ -488,7 +493,7 @@ async def handle_mark_undone(callback: types.CallbackQuery):
 
     if task_id in tasks:
         # Помечаем задачу как невыполненную
-        tasks[task_id]['status'] = "Несделано❌"
+        tasks[task_id]['status'] = "Не сделано❌"
         text_message = format_task_info(tasks[task_id])
         # Отправляем уведомление создателю задачи
         task_creator = tasks[task_id]['who_created']
@@ -500,7 +505,7 @@ async def handle_mark_undone(callback: types.CallbackQuery):
             text_message2 = f"Пользователь @{callback.from_user.username} \
 отметил вашу задачу (ID: {task_id}) как невыполненную.\n\n" + text_message
 
-            message = await bot.send_message(creator_id, text_message2)
+            message = await bot.send_message(creator_id, text_message2, parse_mode="HTML")
             tasks[task_id]['notification_message_id'] = message.message_id
 
             print(f"ID для пользователя {task_creator}: {creator_id}")
@@ -510,7 +515,7 @@ async def handle_mark_undone(callback: types.CallbackQuery):
         await bot.edit_message_text(chat_id=callback.from_user.id,
                                     message_id=callback.message.message_id,
                                     text=text_message,
-                                    reply_markup=mk.make_done_button(task_id))
+                                    reply_markup=mk.make_done_button(task_id), parse_mode="HTML")
     await callback.answer()
 
 
