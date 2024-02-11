@@ -5,6 +5,11 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from datetime import datetime, timedelta
 import asyncio
 import re
+from database.database import SQLITE
+        
+
+sql = SQLITE()       
+    
 
 bot = Bot(token=config.TOKEN)
 storage = MemoryStorage()
@@ -38,18 +43,18 @@ def is_deadline_valid(deadline):
 
 
 def format_task_info(task):
-    assigned_to_list = task['assigned_to'].split(',')
+    assigned_to_list = task.assigned_to.split(',')
     assigned_to_text = ', '.join([f'@{username.strip()}' for username in assigned_to_list])
 
     message_text = (
-        f"<b>ID:</b> {task['task_id']}\n\n"
-        f"<b>Название:</b> {task['title']}\n\n"
-        f"<b>Тип:</b> {task['type']}\n\n"
-        f"<b>Описание:</b> {task['description']}\n\n"
-        f"<b>Дедлайн:</b> {task['deadline']}\n\n"
+        f"<b>ID:</b> {task.task_id}\n\n"
+        f"<b>Название:</b> {task.title}\n\n"
+        f"<b>Тип:</b> {task.type}\n\n"
+        f"<b>Описание:</b> {task.description}\n\n"
+        f"<b>Дедлайн:</b> {task.deadline}\n\n"
         f"<b>Закрепленные люди:</b> {assigned_to_text}\n\n"
-        f"<b>Кто создал:</b> @{task['who_created']}\n\n"
-        f"<b>Статус:</b> {task['status']}\n\n"
+        f"<b>Кто создал:</b> @{task.who_created}\n\n"
+        f"<b>Статус:</b> {task.status}\n\n"
     )
     return message_text
 
@@ -59,7 +64,7 @@ async def send_notification(assigned_to, task_id, text):
         for user_id, username in reg_users.items():
             if username == user_username:
                 print(user_username)
-                message_text = text + '\n\n' + format_task_info(tasks[task_id])
+                message_text = text + '\n\n' + format_task_info(sql.get_task(task_id))
                 done_button = mk.make_done_button(task_id)
                 await bot.send_message(user_id, message_text, reply_markup=done_button, parse_mode='HTML')
 
