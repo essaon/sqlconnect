@@ -1,12 +1,10 @@
 import sqlite3
-from .task import Task
-from .user import User
-
+#Все запросы, которые могут быть базовыми, оформлены тут
 
 class SQLITE():
     
     def __init__ (self,):
-        self.conn = sqlite3.connect('tasks.db')
+        self.conn = sqlite3.connect('tasks.sqlite', check_same_thread=False)
         self.c = self.conn.cursor()
         self.c.execute('CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT, surname TEXT, tg_id TEXT, course INTEGER, group INTEGER, type TEXT, admin INTEGER, super_admin INTEGER,)')
         self.c.execute('CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY, title TEXT, type TEXT, description TEXT, deadline TEXT, assignet_to TEXT, who_created TEXT, status INTEGER, notify INTEGER)')

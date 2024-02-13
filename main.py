@@ -5,10 +5,13 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from datetime import datetime, timedelta
 import asyncio
 import re
-from database.database import SQLITE
+from database.models import User, Task #Запросы через 
+
+#Это если использовать обычную модель запросов SQL
+#from database.database import SQLITE as sqlite
+#sql = sqlite()
         
 
-sql = SQLITE()       
     
 
 bot = Bot(token=config.TOKEN)
@@ -47,7 +50,7 @@ def format_task_info(task):
     assigned_to_text = ', '.join([f'@{username.strip()}' for username in assigned_to_list])
 
     message_text = (
-        f"<b>ID:</b> {task.task_id}\n\n"
+        f"<b>ID:</b> {task.id}\n\n"
         f"<b>Название:</b> {task.title}\n\n"
         f"<b>Тип:</b> {task.type}\n\n"
         f"<b>Описание:</b> {task.description}\n\n"
@@ -71,8 +74,8 @@ async def send_notification(assigned_to, task_id, text):
 
 @dp.message_handler(text='хуй')
 async def command_start(message: types.Message):
-    for user_id, username in reg_users.items():
-        print(user_id, username)
+    for data in sql.get_user_id_name():
+        print(*data)
 
 
 async def cancel_add(message: types.Message):
