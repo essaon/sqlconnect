@@ -606,6 +606,8 @@ async def handle_delete_admin(message: types.Message):
 async def all_(message: types.Message):
     if message.text.lower() == "жос":
         await message.answer("кий Добрыня Никитич")
+    if message.text.lower() == "т":
+        await message.answer("рубоеб Виталя")
 async def on_startup(dp):
     asyncio.create_task(send_reminder())
 
