@@ -5,7 +5,8 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from datetime import datetime, timedelta
 import asyncio
 import re
-from database.models import User, Task #Запросы через 
+from web.users.models import User, Task, TaskUser, Admin, SuperAdmin
+
 
 #Это если использовать обычную модель запросов SQL
 #from database.database import SQLITE as sqlite
@@ -22,8 +23,8 @@ dp = Dispatcher(bot, storage=storage)
 tasks = {} # sql
 reg_users = {} # sql
 
-admin_ids = config.admin_ids # sql это просто словарь с id админов
-super_admin_ids = config.super_admin_ids # sql это тоже словарь с id админов, только админов покруче
+admin_ids = User.objects.tg_id # sql это просто словарь с id админов
+super_admin_ids = User.objects.tg_id # sql это тоже словарь с id админов, только админов покруче
 # я их просто закинул в конфиг, поэтому на гите нету
 
 users = {}
@@ -33,6 +34,10 @@ task_id_counter = 0
 users_waiting_for_confirmation = {}
 
 commands = {"/start", "/help", "/cancel"}
+
+def assignet(task_id):
+    Objects = TaskUser.objects.raw("SELECT tg_id FROM users_taskuser WHERE task_id =  ?", (task_id,))
+    return Objects
 
 
 def is_deadline_valid(deadline):
@@ -46,18 +51,19 @@ def is_deadline_valid(deadline):
 
 
 def format_task_info(task):
-    assigned_to_list = task.assigned_to.split(',')
+    assigned_to_list = TaskUser.objects.raw("SELECT tg_id FROM users_taskuser WHERE task_id = ?", (task))
     assigned_to_text = ', '.join([f'@{username.strip()}' for username in assigned_to_list])
+    tasks = Task.objects.filter(title = task)
 
     message_text = (
-        f"<b>ID:</b> {task.id}\n\n"
-        f"<b>Название:</b> {task.title}\n\n"
-        f"<b>Тип:</b> {task.type}\n\n"
-        f"<b>Описание:</b> {task.description}\n\n"
-        f"<b>Дедлайн:</b> {task.deadline}\n\n"
+        f"<b>ID:</b> {tasks.id}\n\n"
+        f"<b>Название:</b> {tasks.title}\n\n"
+        f"<b>Тип:</b> {tasks.type}\n\n"
+        f"<b>Описание:</b> {tasks.description}\n\n"
+        f"<b>Дедлайн:</b> {tasks.deadline}\n\n"
         f"<b>Закрепленные люди:</b> {assigned_to_text}\n\n"
-        f"<b>Кто создал:</b> @{task.who_created}\n\n"
-        f"<b>Статус:</b> {task.status}\n\n"
+        f"<b>Кто создал:</b> @{tasks.who_created}\n\n"
+        f"<b>Статус:</b> {tasks.status}\n\n"
     )
     return message_text
 
@@ -67,66 +73,64 @@ async def send_notification(assigned_to, task_id, text):
         for user_id, username in reg_users.items():
             if username == user_username:
                 print(user_username)
-                message_text = text + '\n\n' + format_task_info(sql.get_task(task_id))
+                message_text = text + '\n\n' + format_task_info(Task.select().where(Task.id == task_id)).get()
                 done_button = mk.make_done_button(task_id)
                 await bot.send_message(user_id, message_text, reply_markup=done_button, parse_mode='HTML')
 
 
 @dp.message_handler(text='хуй')
 async def command_start(message: types.Message):
-    for data in sql.get_user_id_name():
-        print(*data)
+    for data in User.objects.all():
+        print(f"@{data.tg_id}", data.name)
 
 
 async def cancel_add(message: types.Message):
     global task_id_counter
     await message.answer("Добавление задачи отменено.", reply_markup=mk.adminMenu)
-    del tasks[task_id_counter]
-    task_id_counter -= 1
     await dp.current_state(user=message.from_user.id).set_state(None)
     return
 
-
+#+
 async def send_reminder():
     while True:
         now = datetime.now()
 
         # Проходим по всем заданиям
-        if not any(task.get('deadline') for task in tasks.values()):
+        if not any(Task.objects.deadline() != None):
             print("В словаре нет заданий с непустыми полями deadline.")
         else:
-            for task_id, task in tasks.items():
-                if 'assigned_to' in task and 'deadline' in task and task['deadline']:
-                    deadline = datetime.strptime(task['deadline'], "%d.%m.%Y %H:%M")
+            for task in Task.objects.all():
+                if task.deadline != None:
+                    deadline = datetime.strptime(task.deadline, "%d.%m.%Y %H:%M")
                     time_difference = deadline - now
                     if time_difference > timedelta(weeks=1):
                         weeks_to_deadline = time_difference // timedelta(weeks=1)
                         if timedelta(weeks=weeks_to_deadline) <= time_difference <= timedelta(weeks=weeks_to_deadline,
                                                                                               minutes=1):
-                            await send_notification(task['assigned_to'].split(','), task_id,
+                            await send_notification(assignet(task.id), task.id,
                                                     f"Напоминание: Ровно столько недель осталось до дедлайна: {weeks_to_deadline}, за работу!")
                     # Вычисляем разницу во времени (timedelta)
                     elif timedelta(days=7) <= time_difference <= timedelta(days=7, minutes=1):
-                        await send_notification(task['assigned_to'].split(','), task_id,
+                        await send_notification(assignet(task.id), task.id,
                                                 "Не забывай про это задание! Дедлайн через неделю!")
                     elif timedelta(days=3) <= time_difference <= timedelta(days=3, minutes=1):
-                        await send_notification(task['assigned_to'].split(','), task_id,
+                        await send_notification(assignet(task.id), task.id,
                                                 "Пора двигать попой! Дедлайн через 3 дня!")
                     elif timedelta(days=1) <= time_difference <= timedelta(days=1, minutes=1):
-                        await send_notification(task['assigned_to'].split(','), task_id,
+                        await send_notification(assignet(task.id), task.id,
                                                 "Друг, поторопись! Дедлайн через 1 день!")
                     elif timedelta(hours=1) <= time_difference <= timedelta(hours=1, minutes=1):
-                        await send_notification(task['assigned_to'].split(','), task_id,
+                        await send_notification(assignet(task.id), task.id,
                                                 "Время совсем на исходе! Дедлайн через 1 час!")
 
                 # Проверка каждые 59 секунд
         await asyncio.sleep(59)
 
-
+#+
 @dp.message_handler(commands=['start'])
 async def command_start(message: types.Message):
-    user_id = message.from_user.id
-    if user_id in admin_ids:
+    user_id = message.from_user.username
+    if Admin.objects.get(tg_id = user_id) or SuperAdmin.objects.get(tg_id = user_id):
         await message.answer("Привет, актив👋\nЯ таскабот, который поможет тебе получать, давать и выполнять задания к \
 дедлайну🧑‍💻\n\nТасочки, которые ты должен выполнить, находятся в '<b>Мои задания</b>'\nТасочки для всего актива \
 расположены в '<b>Все задания</b>'\nТасочки, которые назначил ты, доступны в '<b>Я назначил</b>' (<i>только для глав \
@@ -137,7 +141,7 @@ async def command_start(message: types.Message):
 расположены в '<b>Все задания</b>'\n\nКстати, ты успешно зарегистрирован как <b>обычный пользователь</b>😉\n\nУдачи🍀",
                              reply_markup=mk.userMenu, parse_mode='HTML')
 
-    reg_users[user_id] = message.from_user.username
+    User.create(tg_id = message.from_user.username)
     print(message.from_user.id, message.from_user.username)
 
 
@@ -158,145 +162,145 @@ async def command_help(message: types.Message):
 /delete_admin @username - удалить админа (это тоже не можешь хи-хи-хи-ха)\n\n\
 По всем вопросам и предложениям обращаться к @payalnik144", reply_markup=mk.adminMenu, parse_mode='HTML')
 
-
+#+
 @dp.message_handler(text='Добавить задание')
 async def add_task(message: types.Message):
-    user_id = message.from_user.id
-    if user_id in admin_ids:
-        global task_id_counter
-        task_id_counter += 1
-        admins_tasks[user_id] = task_id_counter
+    user_id = message.from_user.username
+    if Admin.objects.get(tg_id = user_id) or SuperAdmin.objects.get(tg_id = user_id):
         await message.answer("Введите название задачи:")
-        tasks[admins_tasks[user_id]] = {'task_id': '', 'title': '', 'type': '', 'description': '', 'deadline': '',
-                                        'assigned_to': '',
-                                        'who_created': (message.from_user.username or 'UnknownUser'),
-                                        'status': 'Не сделано❌',
-                                        }
-        tasks[admins_tasks[user_id]]['task_id'] = admins_tasks[user_id]
-        await dp.current_state(user=message.from_user.id).set_state("waiting_for_title")
+        author = message.from_user.username
+        state = dp.current_state(user=message.from_user.id)
+        await state.set_state("waiting_for_title")
+        await state.update_data(author=author)  # сохраняем автора в context_data
     else:
         await message.answer("Не лееезь, у тебя нет прав для этой операции🤓")
 
-
 @dp.message_handler(state="waiting_for_title")
 async def process_new_task_description(message: types.Message):
-    user_id = message.from_user.id
+    state = dp.current_state(user=message.from_user.id)
     if message.text == '/cancel':
         await cancel_add(message)
-    if admins_tasks[user_id] in tasks:
-        tasks[admins_tasks[user_id]]['title'] = message.text
-        await message.answer("Введите тип задачи:")
-        await dp.current_state(user=message.from_user.id).set_state("waiting_for_type")
-
-
+    title = message.text
+    await message.answer("Введите тип задачи:")
+    await state.set_state("waiting_for_type")
+    await state.update_data(title = title)
+#+
 @dp.message_handler(state="waiting_for_type")
 async def process_new_task_description(message: types.Message):
-    user_id = message.from_user.id
+    state = dp.current_state(user=message.from_user.id)
     if message.text == '/cancel':
         await cancel_add(message)
-    if admins_tasks[user_id] in tasks:
-        tasks[admins_tasks[user_id]]['type'] = message.text
-        await message.answer("Введите описание задачи:")
-        await dp.current_state(user=message.from_user.id).set_state("waiting_for_description")
+    type = message.text
+    await message.answer("Введите описание задачи:")
+    await state.set_state("waiting_for_description")
+    await state.update_data(type = type)
 
-
+#+
 @dp.message_handler(state="waiting_for_description")
 async def process_new_task_description(message: types.Message):
-    user_id = message.from_user.id
+    state = dp.current_state(user=message.from_user.id)
     if message.text == '/cancel':
         await cancel_add(message)
-    if admins_tasks[user_id] in tasks:
-        tasks[admins_tasks[user_id]]['description'] = message.text
-        await message.answer("Введите дедлайн задачи (в формате DD.MM.YYYY HH:MM):\n<i>например</i>, 15.01.2023 14:00",
+    description = message.text
+    await message.answer("Введите дедлайн задачи (в формате DD.MM.YYYY HH:MM):\n<i>например</i>, 15.01.2023 14:00",
                              parse_mode='HTML')
-        await dp.current_state(user=message.from_user.id).set_state("waiting_for_deadline")
+    await state.set_state("waiting_for_deadline")
+    await state.update_data(description = description)
 
-
+#+
 @dp.message_handler(state="waiting_for_deadline")
 async def process_new_task_deadline(message: types.Message):
+    state = dp.current_state(user=message.from_user.id)
     user_id = message.from_user.id
     if message.text == '/cancel':
         await cancel_add(message)
     if admins_tasks[user_id] in tasks:
         deadline = message.text
         if is_deadline_valid(deadline):
-            tasks[admins_tasks[user_id]]['deadline'] = deadline
-            await message.answer("Введите тэги закрепленных людей (через запятую):\n<i>например</i>, @payalnik143, \
-@payalnik144, @payalnik145", parse_mode='HTML')
-            await dp.current_state(user=message.from_user.id).set_state("waiting_for_assigned_to")
+            await message.answer("Введите тэги закрепленных людей (через запятую):\n<i>например</i>, @mikitakiselev143, \
+@mikitakiselev144, @mikitakiselev145", parse_mode='HTML')
+            await state.set_state("waiting_for_assigned_to")
+            await state.update_data(deadline = deadline)
         else:
             await message.answer("Дедлайн введен неправильно. \
 Пожалуйста, проверьте корректность данных и попробуйте снова.")
 
-
+#+
 @dp.message_handler(state="waiting_for_assigned_to")
 async def process_new_task_assigned_to(message: types.Message):
+    state = dp.current_state(user=message.from_user.id)
+    user_id = message.from_user.id
+    data = await state.get_data()
+    title = data.get("title")
+    author = data.get("author")
+    description = data.get("description")
+    type = data.get("type")
+    deadline = data.get("deadline")
     if message.text == '/cancel':
         await cancel_add(message)
-    user_id = message.from_user.id
-    if admins_tasks[user_id] in tasks:
-        tasks[admins_tasks[user_id]]['assigned_to'] = message.text.replace('@', '').replace(' ', '')
+    assigned_to = message.text.replace('@', '').replace(' ', '')
+    for i in assigned_to:
+        TaskUser.create(tg_id = i, title = title)
+    Task.create(title = title, type = type, description = description, deadline = deadline, who_created = author)
+    task_id = Task.objects.raw("SELECT id FROM users_task WHERE title = ?", (title))
+    await message.answer(f"Задача успешно добавлена с ID: {task_id}")
+    message_text = format_task_info(title)
+    await message.answer(message_text, reply_markup=mk.adminMenu, parse_mode='HTML')
 
-        await message.answer(f"Задача успешно добавлена с ID: {admins_tasks[user_id]}")
-        task = tasks[admins_tasks[user_id]]
-        message_text = format_task_info(task)
-        await message.answer(message_text, reply_markup=mk.adminMenu, parse_mode='HTML')
+    # отправка уведомления прикрепленным людям
+    await send_notification(assigned_to, task_id, "Тебе пришла новая тасочка, пупсик:")
+    # Завершаем состояние "waiting_for_assigned_to"
+    await dp.current_state(user=user_id.set_state(None))
 
-        # отправка уведомления прикрепленным людям
-        assigned_to = tasks[admins_tasks[user_id]]['assigned_to'].split(',')
-        await send_notification(assigned_to, admins_tasks[user_id], "Тебе пришла новая тасочка, пупсик:")
-        # Завершаем состояние "waiting_for_assigned_to"
-        await dp.current_state(user=user_id).set_state(None)
-
-
+#+
 @dp.message_handler(text='Все задания')
 async def watch_task(message: types.Message):
     if not tasks:
         await message.answer("Список задач пуст.")
     else:
-        for task_id in tasks.keys():
-            task = tasks[task_id]
-            message_text = format_task_info(task)
+        for task in Task.objects.all():
+            message_text = format_task_info(task.title)
             await message.answer(message_text, parse_mode='HTML')
 
-
+#+
 @dp.message_handler(text='Мои задания')
 async def show_my_tasks(message: types.Message):
     user_username = message.from_user.username
 
-    user_assigned_tasks = [task for task in tasks.values() if user_username in task['assigned_to'].split(',')]
+    user_assigned_tasks = TaskUser.objects.raw("SELECT title FROM users_taskuser WHERE tg_id = ?", (user_username,))
     if user_assigned_tasks:
         for task in user_assigned_tasks:
+            task_info = Task.objects.filter(title = task)
             message_text = format_task_info(task)
-            if task['status'] == 'Не сделано❌':
-                done_button = mk.make_done_button(task['task_id'])
+            if task_info.status == 0:
+                done_button = mk.make_done_button(task_info.id)
                 await message.answer(message_text, reply_markup=done_button, parse_mode='HTML')
             else:
-                undone_button = mk.make_undone_button(task['task_id'])
+                undone_button = mk.make_undone_button(task_info.id)
                 await message.answer(message_text, reply_markup=undone_button, parse_mode='HTML')
     else:
         await message.answer("Вам пока не назначены задачи.")
 
-
+#+
 @dp.message_handler(text='Я назначил')
 async def show_tasks_given_you(message: types.Message):
     user_id = message.from_user.id
     if user_id in admin_ids:
-        # Если пользователь - админ, показать задания, которые он создал
-        admin_tasks = [task for task in tasks.values() if task['who_created'] == message.from_user.username]
-        if admin_tasks:
-            for task in admin_tasks:
-                message_text = format_task_info(task)
+        user = message.from_user.username
+        if Admin.objects.get(tg_id = user) or SuperAdmin.objects.get(tg_id = user):
+            for task in Task.objects.filter(who_created = user):
+                message_text = format_task_info(task.id)
                 await message.answer(message_text, parse_mode='HTML')
         else:
             await message.answer("Вы еще не создали ни одной задачи.")
 
-
+#+
 @dp.message_handler(text='Удалить задание')
 async def request_task_id(message: types.Message):
     user_id = message.from_user.id
-    if user_id in admin_ids:
-        if not tasks:
+    user = message.from_user.username
+    if Admin.objects.get(tg_id = user_id) or SuperAdmin.objects.get(tg_id = user_id):
+        if Task.objects.filter(who_created = user) == []:
             await message.answer("Список задач пуст.")
         else:
             # Отправляем сообщение с просьбой ввести ID задачи
@@ -307,7 +311,7 @@ async def request_task_id(message: types.Message):
     else:
         await message.answer("Не лееезь, у тебя нет прав для этой операции🤓")
 
-
+#+
 @dp.message_handler(state="waiting_for_task_id")
 async def confirm_delete_task(message: types.Message):
     if message.text in commands:
@@ -318,13 +322,13 @@ async def confirm_delete_task(message: types.Message):
         await message.answer("ID задачи должен состоять только из цифр, попробуйте снова.")
         return
     task_id = int(message.text)
-    if task_id in tasks:
-        task = tasks[task_id]
-        if task['who_created'] != message.from_user.username and message.from_user.id not in super_admin_ids:
+    if Task.objects.get(id = task_id):
+        task = Task.objects.get(id = task_id)
+        if task.who_created != message.from_user.username and SuperAdmin.objects.get(tg_id = message.from_user.username) == []:
             await message.answer("Вы не можете удалить задачу, которую создал другой админ.")
             await dp.current_state(user=message.from_user.id).set_state(None)
         else:
-            message_text = format_task_info(task)
+            message_text = format_task_info(task.title)
             markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add("Да", "Нет")
             await message.answer(f"Вы уверены, что хотите удалить следующую задачу?\n{message_text}", reply_markup=markup, parse_mode='HTML')
 
@@ -337,7 +341,7 @@ async def confirm_delete_task(message: types.Message):
         users_waiting_for_confirmation[message.from_user.id] = None
         await dp.current_state(user=message.from_user.id).set_state(None)
 
-
+#+
 @dp.message_handler(state="waiting_for_confirmation")
 async def process_delete_confirmation(message: types.Message):
     user_id = message.from_user.id
@@ -348,7 +352,7 @@ async def process_delete_confirmation(message: types.Message):
         return
     if task_id is not None:
         if message.text == "Да":
-            del tasks[task_id]
+            Task.objects.filter(id =task_id).delete()
             await message.answer(f"Задача с ID {task_id} удалена.", reply_markup=mk.adminMenu)
         elif message.text == "Нет":
             await message.answer("Удаление отменено.", reply_markup=mk.adminMenu)
@@ -360,8 +364,8 @@ async def process_delete_confirmation(message: types.Message):
 
 @dp.message_handler(text='Изменить задание')
 async def request_task_id(message: types.Message):
-    user_id = message.from_user.id
-    if user_id in admin_ids:
+    user_id = message.from_user.username
+    if Admin.objects.get(tg_id = user_id) or SuperAdmin.objects.get(tg_id = user_id):
         if not tasks:
             await message.answer("Список задач пуст.")
         else:
