@@ -141,7 +141,7 @@ async def command_start(message: types.Message):
 расположены в '<b>Все задания</b>'\n\nКстати, ты успешно зарегистрирован как <b>обычный пользователь</b>😉\n\nУдачи🍀",
                              reply_markup=mk.userMenu, parse_mode='HTML')
 
-    User.create(tg_id = message.from_user.username)
+    User.create(message_id = message.from_user.id, tg_id = message.from_user.username)
     print(message.from_user.id, message.from_user.username)
 
 
@@ -361,12 +361,12 @@ async def process_delete_confirmation(message: types.Message):
         users_waiting_for_confirmation[user_id] = None
     await dp.current_state(user=message.from_user.id).set_state(None)
 
-
+#+
 @dp.message_handler(text='Изменить задание')
 async def request_task_id(message: types.Message):
     user_id = message.from_user.username
-    if Admin.objects.get(tg_id = user_id) or SuperAdmin.objects.get(tg_id = user_id):
-        if not tasks:
+    if Admin.objects.get(tg_id = user_id) != [] or SuperAdmin.objects.get(tg_id = user_id) != []:
+        if Task.objects.get(who_created = user_id) == []:
             await message.answer("Список задач пуст.")
         else:
             # Отправляем сообщение с просьбой ввести ID задачи
@@ -377,7 +377,7 @@ async def request_task_id(message: types.Message):
     else:
         await message.answer("Не лееезь, у тебя нет прав для этой операции🤓")
 
-
+#+
 @dp.message_handler(state="waiting_for_task_id_2")
 async def edit_task(message: types.Message):
     # Получаем введенный пользователем ID задачи и преобразуем его в целое число
@@ -390,35 +390,33 @@ async def edit_task(message: types.Message):
         return
     task_id = int(message.text)
 
-    if task_id not in tasks:
+    if Task.objects.filter(id = task_id) == []:
         await message.answer(f"Задачи с ID {task_id} не существует.")
         await dp.current_state(user=message.from_user.id).set_state(None)
         return
     else:
-        task = tasks[task_id]
-        if task['who_created'] != message.from_user.username and message.from_user.id not in super_admin_ids:
+        task = Task.objects.get(id = task_id)
+        if task.who_created != message.from_user.username and SuperAdmin.objects.get(tg_id = message.from_user.username) != []:
             await message.answer("Вы не можете редактировать задачу, которую создал другой админ.")
         else:
             await message.answer("Выберите, какое поле вы хотите отредактировать:", reply_markup=mk.editMenu)
 
             # Устанавливаем состояние редактирования задачи и передаем ID задачи и поле для редактирования
-            users[message.from_user.id] = {'task_id': task_id}
-            users[message.from_user.id]['editing'] = True
-    await dp.current_state(user=message.from_user.id).set_state("waiting_for_field_to_edit")
+            state = dp.current_state(user=message.from_user.id)
+    await state.set_state("waiting_for_field_to_edit")
+    await state.update_data(task_id = task_id)
 
-
+#+
 @dp.message_handler(state="waiting_for_field_to_edit")
 async def edit_task_field(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in users or 'editing' not in users[user_id]:
+    user_id = message.from_user.username
+    if User.objects.get(tg_id = user_id) == [] or 'editing' not in users[user_id]:
         await message.answer("Неверная команда для редактирования.")
         await dp.current_state(user=message.from_user.id).set_state(None)
         return
 
     if message.text in commands:
         await message.answer("Редактирование отменено.", reply_markup=mk.adminMenu)
-        if users[user_id]['editing']:
-            del users[user_id]['editing']
         await dp.current_state(user=message.from_user.id).set_state(None)
         return
 
@@ -427,7 +425,6 @@ async def edit_task_field(message: types.Message):
         return
 
     field_to_edit = message.text
-    users[user_id]['field_to_edit'] = field_to_edit
     if field_to_edit == 'Дедлайн':
         await message.answer(f"Введите новое значение для '{field_to_edit}' в формате DD.MM.YYYY HH:MM:\n<i>например</i>, \
 15.01.2023 14:00", parse_mode='HTML')
@@ -436,33 +433,20 @@ async def edit_task_field(message: types.Message):
 @payalnik143, @payalnik144, @payalnik145", parse_mode='HTML')
     else:
         await message.answer(f"Введите новое значение для '{field_to_edit}':")
-    users[user_id]['editing_value'] = True
-    await dp.current_state(user=message.from_user.id).set_state("waiting_for_editing_value")
+    state = dp.current_state(user=message.from_user.id)
+    await state.set_state("waiting_for_editing_value")
+    await state.update_data(field_to_edit=field_to_edit )
 
-
+#+
 @dp.message_handler(state="waiting_for_editing_value")
 async def edit_task_field_value(message: types.Message):
     user_id = message.from_user.id
-    if 'editing_value' not in users[user_id]:
-        await message.answer("Неверная команда для редактирования.")
-        if users[user_id]['editing']:
-            del users[user_id]['editing']
-        if users[user_id]['field_to_edit']:
-            del users[user_id]['field_to_edit']
-        await dp.current_state(user=message.from_user.id).set_state(None)
-        return
-
-    field_to_edit = users[user_id]['field_to_edit']
-    task_id = users[user_id]['task_id']
-
+    state = dp.current_state(user=message.from_user.id)
+    data = await state.get_data()
+    task_id = data("task_id")
+    field_to_edit = data("field_to_edit")
     if message.text in commands:
         await message.answer("Редактирование отменено.", reply_markup=mk.adminMenu)
-        if users[user_id]['editing_value']:
-            del users[user_id]['editing_value']
-        if users[user_id]['field_to_edit']:
-            del users[user_id]['field_to_edit']
-        if users[user_id]['editing']:
-            del users[user_id]['editing']
         await dp.current_state(user=message.from_user.id).set_state(None)
         return
 
@@ -474,58 +458,56 @@ async def edit_task_field_value(message: types.Message):
         return
 
     # Редактируем поле задачи в зависимости от выбранного поля
-    task = tasks[task_id]
+    task = Task.objects.get(id = task_id)
 
     if field_to_edit == "Название":
-        task['title'] = new_value
+        task.title = new_value
+        task.save()
     elif field_to_edit == "Тип":
-        task['type'] = new_value
+        task.type = new_value
+        task.save()
     elif field_to_edit == "Описание":
-        task['description'] = new_value
+        task.description = new_value
+        task.save()
     elif field_to_edit == "Дедлайн":
         if is_deadline_valid(new_value):
-            task['deadline'] = new_value
+            task.deadline = new_value
+            task.save()
         else:
             await message.answer("Неверный формат дедлайна. Используйте формат 'DD.MM.YYYY HH:MM'.")
             return
     elif field_to_edit == "Закрепленные люди":
-        task['assigned_to'] = new_value.replace('@', '').replace(' ', '')
+        users = new_value.replace('@', '').replace(' ', '').split(',')
+        TaskUser.objects.filter(title =Task.objects.get(id=task_id).title).delete()
+        for user in users:
+            TaskUser.create(tg_id = user, title = Task.objects.get(id=task_id).title)
 
     # Формируем текст для сообщения с обновленными данными
-    message_text = format_task_info(task)
+    message_text = format_task_info(task.title)
 
     await message.answer(f"Поле '{field_to_edit}' отредактировано. Новое значение: {new_value}")
     await message.answer(message_text, reply_markup=mk.adminMenu, parse_mode='HTML')
-    await send_notification(task['assigned_to'].split(','), task_id, f"Админ @{message.from_user.username} \
+    await send_notification(assignet(task_id), task_id, f"Админ @{message.from_user.username} \
 отредактировал вашу задачу (ID: {task_id})\nДержу в курсе, бро🤙")
-
-    # Завершаем редактирование
-    if users[user_id]['editing']:
-        del users[user_id]['editing']
-    if users[user_id]['field_to_edit']:
-        del users[user_id]['field_to_edit']
-    if users[user_id]['editing_value']:
-        del users[user_id]['editing_value']
     await dp.current_state(user=user_id).set_state(None)
 
-
+#+
 @dp.callback_query_handler(lambda callback: callback.data.startswith("mark_done_"))
 async def handle_mark_done(callback: types.CallbackQuery):
     # Извлекаем данные из callback_query.data
     task_id = int(callback.data.split("_")[2])
-
-    if task_id in tasks:
+    
+    if Task.objects.filter(id=task_id)!=[]:
         # Помечаем задачу как выполненную
-        tasks[task_id]['status'] = "Сделано✅"
-        text_message = format_task_info(tasks[task_id])
+        task = Task.objects.get(id=task_id)
+        task.status = 1
+        task.save()
+        text_message = format_task_info(task.title)
 
         # Отправляем уведомление создателю задачи
-        task_creator = tasks[task_id]['who_created']
-        creator_id = next((user_id for user_id, user_username in reg_users.items() if user_username == task_creator), None)
+        task_creator = task.who_created
+        creator_id = User.objects.get(tg_id = task_creator).message_id
         if creator_id is not None:
-            if 'notification_message_id' in tasks[task_id]:
-                await bot.delete_message(chat_id=creator_id, message_id=tasks[task_id].get('notification_message_id'))
-
             text_message2 = f"Пользователь @{callback.from_user.username} \
 отметил вашу задачу (ID: {task_id}) как выполненную.\n\n"+text_message
 
@@ -542,22 +524,21 @@ async def handle_mark_done(callback: types.CallbackQuery):
 
     await callback.answer()
 
-
+#+
 @dp.callback_query_handler(lambda callback: callback.data.startswith("mark_undone_"))
 async def handle_mark_undone(callback: types.CallbackQuery):
     # Извлекаем данные из callback_query.data
     task_id = int(callback.data.split("_")[2])
 
-    if task_id in tasks:
+    if Task.objects.filter(id=task_id)!=[]:
         # Помечаем задачу как невыполненную
-        tasks[task_id]['status'] = "Не сделано❌"
-        text_message = format_task_info(tasks[task_id])
+        task = Task.objects.get(id=task_id)
+        task.status = 0
+        text_message = format_task_info(task.title)
         # Отправляем уведомление создателю задачи
-        task_creator = tasks[task_id]['who_created']
-        creator_id = next((user_id for user_id, user_username in reg_users.items() if user_username == task_creator), None)
+        task_creator = task.who_created
+        creator_id = User.objects.get(tg_id = task_creator).message_id
         if creator_id is not None:
-            if 'notification_message_id' in tasks[task_id]:
-                await bot.delete_message(chat_id=creator_id, message_id=tasks[task_id].get('notification_message_id'))
 
             text_message2 = f"Пользователь @{callback.from_user.username} \
 отметил вашу задачу (ID: {task_id}) как невыполненную.\n\n" + text_message
@@ -575,49 +556,47 @@ async def handle_mark_undone(callback: types.CallbackQuery):
                                     reply_markup=mk.make_done_button(task_id), parse_mode="HTML")
     await callback.answer()
 
-
+#+
 @dp.message_handler(lambda message: message.text.startswith("/add_admin"))
 async def handle_add_admin(message: types.Message):
-    us_id = message.from_user.id
-    if us_id not in super_admin_ids:
+    user_id = message.from_user.username
+    if Admin.objects.get(tg_id = user_id) == [] and SuperAdmin.objects.get(tg_id = user_id) == []:
         await message.answer("Ещё не дорос, пупсик")
         return
     if len(message.text.split()) != 2:
         await message.answer("Неверный формат команды")
         return
     new_admin_username = message.text.split()[1].replace("@", "")
-    user_id = next((user_id for user_id, user_username in reg_users.items() if user_username == new_admin_username),
-                   None)
-    if user_id in super_admin_ids:
+    newadmin_id = User.objects.get(tg_id = new_admin_username).mesage_id
+    if Admin.objects.get(tg_id = new_admin_username) != [] or SuperAdmin.objects.get(tg_id = new_admin_username) != [] :
         await message.answer(f"Да это же наш брат! Пользователь @{new_admin_username} уже админ")
         return
-    if user_id in reg_users:
-        admin_ids.add(user_id)
-        await bot.send_message(user_id, f"Поздравляю, ты стал админом таскабота!🥳", reply_markup=mk.adminMenu)
+    if User.objects.get(tg_id = new_admin_username) != []:
+        Admin.objects.create(tg_id = new_admin_username)
+        await bot.send_message(newadmin_id, f"Поздравляю, ты стал админом таскабота!🥳", reply_markup=mk.adminMenu)
         await message.answer(f"Пользователь @{new_admin_username} теперь админ!🥳")
     else:
         await message.answer(f"Пользователь @{new_admin_username} не найден, возможно, не зарегистрирован.")
 
-
+#+
 @dp.message_handler(lambda message: message.text.startswith("/delete_admin"))
 async def handle_delete_admin(message: types.Message):
-    us_id = message.from_user.id
-    if us_id not in super_admin_ids:
+    user_id = message.from_user.username
+    if Admin.objects.get(tg_id = user_id) == [] and SuperAdmin.objects.get(tg_id = user_id) == []:
         await message.answer("Ещё не дорос, пупсик")
         return
     if len(message.text.split()) != 2:
         await message.answer("Неверный формат команды")
         return
     new_admin_username = message.text.split()[1].replace("@", "")
-    user_id = next((user_id for user_id, user_username in reg_users.items() if user_username == new_admin_username),
-                   None)
-    if user_id in super_admin_ids:
+    newadmin_id = User.objects.get(tg_id = new_admin_username).mesage_id
+    if Admin.objects.get(tg_id = new_admin_username) == [] and SuperAdmin.objects.get(tg_id = new_admin_username) == [] :
         await message.answer(f"Он и так не с нами! Пользователь @{new_admin_username} не может быть удалён, так как не \
 является админом")
         return
-    if user_id in reg_users:
-        admin_ids.remove(user_id)
-        await bot.send_message(user_id, f"Ты выписан из списка пидорасов (больше не админ)😭", reply_markup=mk.userMenu)
+    if User.objects.get(tg_id = new_admin_username) != []:
+        Admin.objects.filter(tg_id = new_admin_username).delete()
+        await bot.send_message(newadmin_id, f"Ты выписан из списка пидорасов (больше не админ)😭", reply_markup=mk.userMenu)
         await message.answer(f"Пользователь @{new_admin_username} больше не админ!😭")
     else:
         await message.answer(f"Пользователь @{new_admin_username} не найден, возможно, не зарегистрирован.")

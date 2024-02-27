@@ -25,6 +25,7 @@ class User(models.Model):
         admin (bool): A boolean indicating whether the user is an administrator.
         superadmin (bool): A boolean indicating whether the user is a super administrator.
     """
+    message_id = models.IntegerField(default = None)
     name = models.TextField(default=None) 
     surname = models.TextField(default=None)
     tg_id = models.TextField(unique=True)
