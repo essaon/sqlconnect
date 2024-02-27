@@ -6,11 +6,6 @@ from datetime import datetime, timedelta
 import asyncio
 import re
 from web.users.models import User, Task, TaskUser, Admin, SuperAdmin
-
-
-#Это если использовать обычную модель запросов SQL
-#from database.database import SQLITE as sqlite
-#sql = sqlite()
         
 
     
@@ -82,7 +77,9 @@ async def send_notification(assigned_to, task_id, text):
 async def command_start(message: types.Message):
     for data in User.objects.all():
         print(f"@{data.tg_id}", data.name)
-
+@dp.message_handler(text='penis')
+async def talking(message: types.Message):
+    await message.answer("Penis Talking Ultimate")
 
 async def cancel_add(message: types.Message):
     global task_id_counter
